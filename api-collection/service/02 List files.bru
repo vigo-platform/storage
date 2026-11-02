@@ -1,0 +1,39 @@
+meta {
+  name: 02 List files
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/files?page=0&size=20&category=WORKOUT
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{athlete_token}}
+}
+
+tests {
+  test("Expected HTTP status", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("Snake-case bilingual response envelope", function () {
+    const body = res.getBody();
+    expect(body.success).to.equal(true);
+    expect(body).to.have.all.keys("success", "code", "message", "message_fa", "data", "timestamp");
+    expect(body.message_fa).to.be.a("string").and.not.empty;
+  });
+  test("Page metadata", function () {
+    expect(res.getBody().data.page).to.equal(0);
+    expect(res.getBody().data.content).to.be.an("array");
+  });
+}
+
+docs {
+  ATHLETE sees files addressed to them; COACH sees files they uploaded; ADMIN sees all.
+  Optional athlete_id/coach_id filters. An ATHLETE athlete_id or COACH coach_id different from
+  the token subject is forged scope -> 403. page>=0, 1<=size<=100. Empty result is valid.
+
+  Example 200 data: {"page":0,"size":20,"total_elements":1,"total_pages":1,"content":[{"file_id":"7d1c0b1e-0000-0000-0000-000000000001","coach_id":"d489391f-73e9-4545-ac65-7dd2552c1a9a","athlete_id":"9c279da3-4441-4cc3-aa46-f6fbe3293b45","category":"WORKOUT","title":"Weekly workout","latest_version":1}]}
+}

@@ -1,0 +1,70 @@
+server:
+  port: 8082
+  error:
+    include-message: never
+    include-stacktrace: never
+spring:
+  application:
+    name: storage
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 21MB
+      file-size-threshold: 0
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: storage-subscriptions-v1
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      properties:
+        max.poll.interval.ms: 300000
+    listener:
+      ack-mode: manual_immediate
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        delivery.timeout.ms: 60000
+        request.timeout.ms: 15000
+storage:
+  root: ${STORAGE_FS_ROOT:/var/lib/vigo/storage}
+  auth:
+    jwks-uri: ${AUTH_JWKS_URI}
+    issuer: ${JWT_ISSUER}
+    audience: ${JWT_AUDIENCE}
+  outbox-delay-ms: ${STORAGE_OUTBOX_DELAY_MS:1000}
+management:
+  server:
+    port: 9082
+    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db,diskSpace,kafka,storage
+  health:
+    diskspace:
+      path: ${STORAGE_FS_ROOT:/var/lib/vigo/storage}

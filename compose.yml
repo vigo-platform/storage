@@ -1,0 +1,35 @@
+services:
+  storage:
+    build: .
+    image: vigo/storage:local
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "${STORAGE_BIND_ADDRESS:-127.0.0.1}:8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/vigo_storage_service}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:?Required database username}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?Required database password}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      AUTH_JWKS_URI: ${AUTH_JWKS_URI:?Required Auth JWKS URI}
+      JWT_ISSUER: ${JWT_ISSUER:?Required JWT issuer}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:?Required JWT audience}
+      STORAGE_FS_ROOT: /var/lib/vigo/storage
+      MANAGEMENT_ADDRESS: 0.0.0.0
+    volumes:
+      - storage_data:/var/lib/vigo/storage
+    networks: [vigo-app]
+    labels:
+      logging: "true"
+networks:
+  vigo-app:
+    external: true
+    name: ${APP_NETWORK_NAME:-vigo-app}
+volumes:
+  storage_data:
+    name: ${STORAGE_VOLUME_NAME:-vigo-storage-data}

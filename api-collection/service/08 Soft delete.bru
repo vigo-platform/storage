@@ -1,0 +1,38 @@
+meta {
+  name: 08 Soft delete
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{base_url}}/api/v1/files/{{file_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{coach_token}}
+}
+
+tests {
+  test("Expected HTTP status", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("Snake-case bilingual response envelope", function () {
+    const body = res.getBody();
+    expect(body.success).to.equal(true);
+    expect(body).to.have.all.keys("success", "code", "message", "message_fa", "data", "timestamp");
+    expect(body.message_fa).to.be.a("string").and.not.empty;
+  });
+  test("Deleted code", function () {
+    expect(res.getBody().code).to.equal("DELETED");
+  });
+}
+
+docs {
+  Owner COACH or ADMIN only. Execute after other requests. Metadata disappears from API and all
+  versions still download attempts return 404, but every version row and stored byte is retained
+  for audit. The pair may then be reused for a new file.
+
+  Example 200: {"success":true,"code":"DELETED","message":"File deleted","message_fa":"فایل حذف شد","data":null,"timestamp":"2026-10-31T12:00:00Z"}
+}

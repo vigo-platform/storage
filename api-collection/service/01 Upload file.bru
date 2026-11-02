@@ -1,0 +1,52 @@
+meta {
+  name: 01 Upload file
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/v1/files
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{coach_token}}
+}
+
+body:multipart-form {
+  file: @file({{upload_path}})
+  athlete_id: {{athlete_id}}
+  category: WORKOUT
+  title: Weekly workout
+  description: Coach-issued program
+}
+
+script:post-response {
+  if (res.getStatus() === 201) bru.setVar("file_id", res.getBody().data.file_id);
+}
+
+tests {
+  test("Expected HTTP status", function () {
+    expect(res.getStatus()).to.equal(201);
+  });
+  test("Snake-case bilingual response envelope", function () {
+    const body = res.getBody();
+    expect(body.success).to.equal(true);
+    expect(body).to.have.all.keys("success", "code", "message", "message_fa", "data", "timestamp");
+    expect(body.message_fa).to.be.a("string").and.not.empty;
+  });
+  test("Created version one", function () {
+    expect(res.getBody().data.latest_version).to.equal(1);
+  });
+}
+
+docs {
+  COACH only, active subscription required, no self-target. Saves returned file_id for later requests.
+  401 missing/invalid JWT; 403 wrong role/owner, self target or NO_ACTIVE_RELATION; 409 FILE_ALREADY_EXISTS;
+  413 FILE_TOO_LARGE; 415 unsupported extension; 400 VALIDATION_FAILED/FILE_CONTENT_MISMATCH.
+  Limit is 20 MiB; extension and actual bytes are validated. Content-Type client header is ignored.
+  File identity title is exact case-sensitive per athlete+category.
+
+  Example 201 data: {"file_id":"7d1c0b1e-0000-0000-0000-000000000001","coach_id":"d489391f-73e9-4545-ac65-7dd2552c1a9a","athlete_id":"9c279da3-4441-4cc3-aa46-f6fbe3293b45","category":"WORKOUT","title":"Weekly workout","description":"Coach-issued program","latest_version":1,"content_type":"text/plain; charset=UTF-8","size_bytes":37,"created_at":"2026-10-31T12:00:00Z","updated_at":"2026-10-31T12:00:00Z"}
+}

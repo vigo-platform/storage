@@ -1,0 +1,47 @@
+meta {
+  name: 04 Edit metadata
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/api/v1/files/{{file_id}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{admin_token}}
+}
+
+body:json {
+  {
+    "title": "Updated weekly workout",
+    "description": "Reviewed program",
+    "category": "WORKOUT"
+  }
+}
+
+headers {
+  Content-Type: application/json
+}
+
+tests {
+  test("Expected HTTP status", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("Snake-case bilingual response envelope", function () {
+    const body = res.getBody();
+    expect(body.success).to.equal(true);
+    expect(body).to.have.all.keys("success", "code", "message", "message_fa", "data", "timestamp");
+    expect(body.message_fa).to.be.a("string").and.not.empty;
+  });
+}
+
+docs {
+  Owner COACH or ADMIN only; ADMIN may edit but never upload. Send only changed fields (title,
+  description nullable, category). Empty object, unknown fields, invalid values: 400.
+  Collision with another active athlete/category/title: 409 FILE_ALREADY_EXISTS. Deleted: 404.
+
+  Example 200 data: {"file_id":"7d1c0b1e-0000-0000-0000-000000000001","coach_id":"d489391f-73e9-4545-ac65-7dd2552c1a9a","athlete_id":"9c279da3-4441-4cc3-aa46-f6fbe3293b45","category":"WORKOUT","title":"Updated weekly workout","latest_version":1}
+}

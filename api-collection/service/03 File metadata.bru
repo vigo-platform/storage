@@ -1,0 +1,37 @@
+meta {
+  name: 03 File metadata
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/files/{{file_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{athlete_token}}
+}
+
+tests {
+  test("Expected HTTP status", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("Snake-case bilingual response envelope", function () {
+    const body = res.getBody();
+    expect(body.success).to.equal(true);
+    expect(body).to.have.all.keys("success", "code", "message", "message_fa", "data", "timestamp");
+    expect(body.message_fa).to.be.a("string").and.not.empty;
+  });
+  test("Version history present", function () {
+    expect(res.getBody().data.versions).to.be.an("array");
+  });
+}
+
+docs {
+  Addressed ATHLETE, owner COACH or ADMIN. Non-owner existing file: 403; deleted/nonexistent: 404.
+  X-User-Id / X-User-Role headers are never trusted.
+
+  Example 200 data: {"file_id":"7d1c0b1e-0000-0000-0000-000000000001","coach_id":"d489391f-73e9-4545-ac65-7dd2552c1a9a","athlete_id":"9c279da3-4441-4cc3-aa46-f6fbe3293b45","category":"WORKOUT","title":"Weekly workout","latest_version":1,"versions":[{"version":1,"original_name":"program.txt","content_type":"text/plain; charset=UTF-8","size_bytes":37,"checksum_sha256":"64-hex-sha256","change_note":null,"uploaded_by":"d489391f-73e9-4545-ac65-7dd2552c1a9a","uploaded_at":"2026-10-31T12:00:00Z"}]}
+}

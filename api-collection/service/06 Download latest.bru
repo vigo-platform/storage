@@ -1,0 +1,38 @@
+meta {
+  name: 06 Download latest
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/files/{{file_id}}/download
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{athlete_token}}
+}
+
+tests {
+  test("Expected HTTP status", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("Safe streaming headers", function () {
+    expect(res.getHeader("content-disposition")).to.include("attachment");
+    expect(res.getHeader("x-content-type-options")).to.equal("nosniff");
+    expect(Number(res.getHeader("content-length"))).to.be.greaterThan(0);
+    expect(Number(res.getHeader("x-file-version"))).to.be.greaterThan(0);
+  });
+}
+
+docs {
+  Binary stream, not JSON. Without version, latest is returned. Read permission follows file
+  visibility even after subscription expiration. Missing/referenced bytes are an internal integrity
+  failure, never an empty 200.
+
+  Example headers: Content-Type: text/plain; charset=UTF-8; Content-Length: 37;
+  Content-Disposition: attachment; filename*=UTF-8''program.txt; X-File-Version: 2;
+  X-Content-Type-Options: nosniff; Cache-Control: no-store.
+  Example body: fixture program.txt contents.
+}

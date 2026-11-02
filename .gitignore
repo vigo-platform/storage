@@ -1,0 +1,12 @@
+target/
+*.log
+.env
+.env.*
+!.env.example
+.idea/
+*.iml
+.keys/
+.storage/
+api-collection/**/environments/*.local.bru
+api-collection/**/.env*
+!api-collection/**/.env.example

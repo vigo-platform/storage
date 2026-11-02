@@ -1,0 +1,33 @@
+meta {
+  name: 07 Download version
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/api/v1/files/{{file_id}}/download?version=1
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{athlete_token}}
+}
+
+tests {
+  test("Expected HTTP status", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+  test("Safe streaming headers", function () {
+    expect(res.getHeader("content-disposition")).to.include("attachment");
+    expect(res.getHeader("x-content-type-options")).to.equal("nosniff");
+    expect(Number(res.getHeader("content-length"))).to.be.greaterThan(0);
+    expect(Number(res.getHeader("x-file-version"))).to.equal(1);
+  });
+}
+
+docs {
+  version must be >=1; missing version for an existing file: 404. Non-owner: 403.
+  Example body: original version-1 fixture bytes. Example header values mirror request 06 with
+  X-File-Version: 1.
+}
