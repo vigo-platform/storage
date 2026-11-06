@@ -19,6 +19,8 @@ services:
       AUTH_JWKS_URI: ${AUTH_JWKS_URI:?Required Auth JWKS URI}
       JWT_ISSUER: ${JWT_ISSUER:?Required JWT issuer}
       JWT_AUDIENCE: ${JWT_AUDIENCE:?Required JWT audience}
+      STORAGE_USER_BASE_URL: ${STORAGE_USER_BASE_URL:?Required User REST origin}
+      STORAGE_USER_ALLOW_HTTP: ${STORAGE_USER_ALLOW_HTTP:-false}
       STORAGE_FS_ROOT: /var/lib/vigo/storage
       MANAGEMENT_ADDRESS: 0.0.0.0
     volumes:

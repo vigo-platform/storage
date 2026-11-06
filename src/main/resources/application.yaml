@@ -48,6 +48,9 @@ storage:
     jwks-uri: ${AUTH_JWKS_URI}
     issuer: ${JWT_ISSUER}
     audience: ${JWT_AUDIENCE}
+  user:
+    base-url: ${STORAGE_USER_BASE_URL}
+    allow-http: ${STORAGE_USER_ALLOW_HTTP:false}
   outbox-delay-ms: ${STORAGE_OUTBOX_DELAY_MS:1000}
 management:
   server:

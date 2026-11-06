@@ -2,12 +2,6 @@ package ir.vigoapp.storage;
 
 import static org.assertj.core.api.Assertions.*;
 import com.fasterxml.jackson.databind.*;
-import com.nimbusds.jose.*;
-import com.nimbusds.jose.crypto.RSASSASigner;
-import com.nimbusds.jose.jwk.*;
-import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
-import com.nimbusds.jwt.*;
-import com.sun.net.httpserver.HttpServer;
 import java.net.*;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
@@ -24,38 +18,31 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
-/** Explicit opt-in only: ./mvnw -Pintegration verify. Real Postgres + Kafka + RS256/JWKS HTTP. */
+/** Explicit opt-in only: sh mvnw -Pintegration verify. Real Postgres, Kafka, and HTTP fixtures for JWKS and User. */
 @Testcontainers(disabledWithoutDocker=true)
 @SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT)
+@DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
 class StorageIT {
     @org.testcontainers.junit.jupiter.Container static PostgreSQLContainer<?> postgres=new PostgreSQLContainer<>("postgres:16-alpine");
-    @org.testcontainers.junit.jupiter.Container static KafkaContainer broker=new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.9.2"));
-    static RSAKey signing;static HttpServer jwks;
-    static void startJwks() {
-        try {
-            signing=new RSAKeyGenerator(2048).keyID("integration-only").generate();
-            jwks=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
-            jwks.createContext("/jwks",exchange->{byte[] body=new JWKSet(signing.toPublicJWK()).toString().getBytes(StandardCharsets.UTF_8);exchange.getResponseHeaders().add("Content-Type","application/json");exchange.sendResponseHeaders(200,body.length);try(var out=exchange.getResponseBody()){out.write(body);}});
-            jwks.start();
-        }catch(Exception e){throw new ExceptionInInitializerError(e);}
-    }
+    @org.testcontainers.junit.jupiter.Container static KafkaContainer broker=new KafkaContainer(DockerImageName.parse("apache/kafka:3.9.1"));
+    static AuthTokenFixture auth;
     @DynamicPropertySource static void properties(DynamicPropertyRegistry r) {
-        startJwks();
+        auth=new AuthTokenFixture();
+        auth.configure(r);
         r.add("spring.datasource.url",postgres::getJdbcUrl);r.add("spring.datasource.username",postgres::getUsername);r.add("spring.datasource.password",postgres::getPassword);
         r.add("spring.kafka.bootstrap-servers",broker::getBootstrapServers);
         r.add("storage.root",()->Path.of(System.getProperty("basedir","."),"target","it-blobs").toAbsolutePath().toString());
-        r.add("storage.auth.jwks-uri",()->"http://127.0.0.1:"+jwks.getAddress().getPort()+"/jwks");
-        r.add("storage.auth.issuer",()->"https://fixture.test");r.add("storage.auth.audience",()->"storage-it");
         r.add("storage.outbox-delay-ms",()->"100");
     }
-    @AfterAll static void closeFixture(){if(jwks!=null)jwks.stop(0);}
+    @AfterAll static void closeFixture(){if(auth!=null)auth.close();}
     @Autowired FileService service;@Autowired JdbcTemplate db;@Autowired SubscriptionConsumer subscriptions;
     @Autowired KafkaTemplate<String,byte[]> kafka;
     @LocalServerPort int port;
@@ -65,33 +52,32 @@ class StorageIT {
     void activate(UUID sub,long version)throws Exception{subscriptions.apply(SubscriptionConsumerTest.bytes(SubscriptionConsumerTest.envelope(sub,version,"SubscriptionActivated","ACTIVE")));}
     MockMultipartFile file(String content){return new MockMultipartFile("file","program.txt","application/evil-client-type",content.getBytes(StandardCharsets.UTF_8));}
     UUID upload(String title)throws Exception{activate(UUID.randomUUID(),1);return UUID.fromString((String)service.upload(owner(),athlete,Policy.Category.WORKOUT,title,null,file("original bytes" )).get("file_id"));}
-    String token(UUID subject,String role)throws Exception{
-        var claims=new JWTClaimsSet.Builder().subject(subject.toString()).issuer("https://fixture.test").audience("storage-it").claim("role",role).expirationTime(Date.from(Instant.now().plusSeconds(120))).build();
-        var jwt=new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(signing.getKeyID()).build(),claims);jwt.sign(new RSASSASigner(signing));return jwt.serialize();
-    }
     HttpResponse<byte[]> request(String path,String method,String token,String body)throws Exception {
-        var b=HttpRequest.newBuilder(URI.create("http://localhost:"+port+path)).header("X-User-Id",UUID.randomUUID().toString()).header("X-User-Role","ADMIN");
+        var b=HttpRequest.newBuilder(URI.create("http://localhost:"+port+path)).header("X-User-Id",athlete.toString()).header("X-User-Role","ADMIN");
         if(token!=null)b.header("Authorization","Bearer "+token);
         if(body!=null)b.header("Content-Type","application/json");
         return HttpClient.newHttpClient().send(b.method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofByteArray());
     }
     @Test void realJwtPoliciesByteDownloadAndSoftDeleteKeepHistory()throws Exception {
         UUID id=upload("integration-"+UUID.randomUUID());String path="/api/v1/files/"+id;
-        var admin=request(path+"/versions","POST",token(UUID.randomUUID(),"ADMIN"),null);assertThat(admin.statusCode()).isIn(403,415);
+        String coachToken=auth.token(coach,"COACH");
+        var admin=request(path+"/versions","POST",auth.token(UUID.randomUUID(),"ADMIN"),null);assertThat(admin.statusCode()).isIn(403,415);
         assertThat(request("/actuator/prometheus","GET",null,null).statusCode()).isIn(401,403,404);
-        assertThat(request("/actuator/prometheus","GET",token(UUID.randomUUID(),"ADMIN"),null).statusCode()).isIn(403,404);
+        assertThat(request("/actuator/prometheus","GET",auth.token(UUID.randomUUID(),"ADMIN"),null).statusCode()).isIn(403,404);
         assertThat(request(path,"GET",null,null).statusCode()).isEqualTo(401);
-        assertThat(request(path,"GET",token(UUID.randomUUID(),"ATHLETE"),null).statusCode()).isEqualTo(403);
-        assertThat(request(path,"PATCH",token(athlete,"ATHLETE"),"{\"title\":\"forged\"}").statusCode()).isEqualTo(403);
-        assertThat(request("/api/v1/files?athlete_id="+UUID.randomUUID(),"GET",token(athlete,"ATHLETE"),null).statusCode()).isEqualTo(403);
-        var download=request(path+"/download?version=1","GET",token(athlete,"ATHLETE"),null);
+        String invalid=auth.sign(AuthTokenFixture.claims("42","ATHLETE").build(),"JWT");
+        assertThat(request(path,"GET",invalid,null).statusCode()).isEqualTo(401);
+        assertThat(request(path,"GET",auth.token(UUID.randomUUID(),"ATHLETE"),null).statusCode()).isEqualTo(403);
+        assertThat(request(path,"PATCH",auth.token(athlete,"ATHLETE"),"{\"title\":\"forged\"}").statusCode()).isEqualTo(403);
+        assertThat(request("/api/v1/files?athlete_id="+UUID.randomUUID(),"GET",auth.token(athlete,"ATHLETE"),null).statusCode()).isEqualTo(403);
+        var download=request(path+"/download?version=1","GET",auth.token(athlete,"ATHLETE"),null);
         assertThat(download.statusCode()).isEqualTo(200);assertThat(download.body()).isEqualTo("original bytes".getBytes());
         assertThat(download.headers().firstValue("x-file-version")).contains("1");assertThat(download.headers().firstValue("x-content-type-options")).contains("nosniff");
         assertThat(download.headers().firstValue("content-disposition").orElseThrow()).startsWith("attachment").contains("filename*=");
-        assertThat(request(path,"PATCH",token(UUID.randomUUID(),"ADMIN"),"{\"description\":\"admin edit\"}").statusCode()).isEqualTo(200);
-        assertThat(request(path,"DELETE",token(coach,"COACH"),null).statusCode()).isEqualTo(200);
-        assertThat(request(path,"GET",token(coach,"COACH"),null).statusCode()).isEqualTo(404);
-        assertThat(request(path+"/download","GET",token(UUID.randomUUID(),"ADMIN"),null).statusCode()).isEqualTo(404);
+        assertThat(request(path,"PATCH",auth.token(UUID.randomUUID(),"ADMIN"),"{\"description\":\"admin edit\"}").statusCode()).isEqualTo(200);
+        assertThat(request(path,"DELETE",coachToken,null).statusCode()).isEqualTo(200);
+        assertThat(request(path,"GET",auth.token(coach,"COACH"),null).statusCode()).isEqualTo(404);
+        assertThat(request(path+"/download","GET",auth.token(UUID.randomUUID(),"ADMIN"),null).statusCode()).isEqualTo(404);
         assertThat(db.queryForObject("select count(*) from file_versions where file_id=?",Integer.class,id)).isEqualTo(1);
         assertThat(db.queryForObject("select count(*) from files where file_id=? and deleted_at is not null",Integer.class,id)).isEqualTo(1);
     }
