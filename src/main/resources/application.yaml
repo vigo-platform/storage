@@ -43,7 +43,19 @@ spring:
         delivery.timeout.ms: 60000
         request.timeout.ms: 15000
 storage:
+  # filesystem (default, development/tests) or s3 (ParsPack-compatible object storage).
+  backend: ${STORAGE_BACKEND:filesystem}
   root: ${STORAGE_FS_ROOT:/var/lib/vigo/storage}
+  # Temporary private-download URL lifetime. Keep it short; 5-10 minutes is typical.
+  presign-ttl: ${STORAGE_PRESIGN_TTL:PT10M}
+  s3:
+    endpoint: ${STORAGE_S3_ENDPOINT:}
+    region: ${STORAGE_S3_REGION:us-east-1}
+    bucket: ${STORAGE_S3_BUCKET:}
+    access-key: ${STORAGE_S3_ACCESS_KEY:}
+    secret-key: ${STORAGE_S3_SECRET_KEY:}
+    # Path-style is required by most S3-compatible providers, including ParsPack.
+    path-style: ${STORAGE_S3_PATH_STYLE:true}
   auth:
     jwks-uri: ${AUTH_JWKS_URI}
     issuer: ${JWT_ISSUER}

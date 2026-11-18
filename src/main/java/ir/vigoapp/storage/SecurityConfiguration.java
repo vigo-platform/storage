@@ -73,7 +73,11 @@ class SecurityConfiguration {
         http.csrf(c->c.disable()).sessionManagement(s->s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(a->a.requestMatchers("/actuator/health","/actuator/health/liveness","/actuator/health/readiness").permitAll()
                 .requestMatchers("/actuator/prometheus").denyAll()
-                .requestMatchers("/api/v1/files","/api/v1/files/**").authenticated().anyRequest().denyAll())
+                // Public assets are readable anonymously; the service still refuses any
+                // asset whose visibility is PRIVATE, so this cannot leak private bytes.
+                .requestMatchers(org.springframework.http.HttpMethod.GET,"/api/v1/assets/*/content").permitAll()
+                .requestMatchers("/api/v1/files","/api/v1/files/**","/api/v1/assets","/api/v1/assets/**").authenticated()
+                .anyRequest().denyAll())
             .oauth2ResourceServer(o->o.jwt(Customizer.withDefaults())
                 .authenticationEntryPoint((req,res,e)->writeError(res,401,"UNAUTHORIZED")))
             .exceptionHandling(e->e.authenticationEntryPoint((req,res,x)->writeError(res,401,"UNAUTHORIZED"))
