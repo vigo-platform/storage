@@ -14,14 +14,14 @@ class FileSystemBlobStoreTest {
         var store=new FileSystemBlobStore(root.toString());byte[] bytes="برنامه exercise".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         var staged=store.put(new ByteArrayInputStream(bytes));assertThat(staged.size()).isEqualTo(bytes.length);
         assertThat(staged.sha256()).isEqualTo(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)));
-        assertThat(store.exists(staged.key())).isFalse();store.promote(staged);
-        assertThat(store.exists(staged.key())).isTrue();assertThat(store.size(staged.key())).isEqualTo(bytes.length);
-        try(var in=store.open(staged.key())){assertThat(in.readAllBytes()).isEqualTo(bytes);}
-        assertThatThrownBy(()->store.promote(staged)).isInstanceOf(IOException.class);
+        assertThat(store.exists(staged.key(),BlobStore.Visibility.PRIVATE)).isFalse();store.promote(staged,BlobStore.Visibility.PRIVATE);
+        assertThat(store.exists(staged.key(),BlobStore.Visibility.PRIVATE)).isTrue();assertThat(store.size(staged.key(),BlobStore.Visibility.PRIVATE)).isEqualTo(bytes.length);
+        try(var in=store.open(staged.key(),BlobStore.Visibility.PRIVATE)){assertThat(in.readAllBytes()).isEqualTo(bytes);}
+        assertThatThrownBy(()->store.promote(staged,BlobStore.Visibility.PRIVATE)).isInstanceOf(IOException.class);
     }
     @Test void traversalAndForeignKeysAreRejected() throws Exception {
         var store=new FileSystemBlobStore(root.toString());
-        for(String key:new String[]{"../secret","/etc/passwd","a\\b","file.txt","","A".repeat(32)})assertThatThrownBy(()->store.open(key)).isInstanceOf(IOException.class);
+        for(String key:new String[]{"../secret","/etc/passwd","a\\b","file.txt","","A".repeat(32)})assertThatThrownBy(()->store.open(key,BlobStore.Visibility.PRIVATE)).isInstanceOf(IOException.class);
     }
     @Test void actualStreamingLimitRejectsOversizeAndCleansOnlyStage() throws Exception {
         var store=new FileSystemBlobStore(root.toString());

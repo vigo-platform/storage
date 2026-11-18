@@ -32,6 +32,60 @@ The management-port filter chain permits only GET health/probes/Prometheus and d
 
 Blank or absent auth configuration fails startup. An unavailable/unknown JWKS key fails authentication, not open access. Production should use HTTPS JWKS and trusted network/DNS. Multipart max file is 20 MiB = 20,971,520 bytes (contract's 20 MB interpreted as binary MiB), request 21 MiB to allow form overhead; the independent streaming counter enforces the actual content limit regardless of client claims.
 
+## Object storage backends
+
+`STORAGE_BACKEND` selects the adapter; both implement the same `BlobStore` contract.
+
+| Backend | Use | Presigned URLs |
+|---|---|---|
+| `filesystem` (default) | development, tests | none — `mode: STREAM` and the client fetches `/content` |
+| `s3` | ParsPack or any S3-compatible provider | `mode: PRESIGNED`, SigV4 |
+
+S3 configuration, all from the environment and never committed:
+
+```dotenv
+STORAGE_BACKEND=s3
+STORAGE_S3_ENDPOINT=https://<account>.parspack.net
+STORAGE_S3_REGION=us-east-1
+STORAGE_S3_BUCKET=<bucket>
+STORAGE_S3_ACCESS_KEY=...
+STORAGE_S3_SECRET_KEY=...
+STORAGE_S3_PATH_STYLE=true
+STORAGE_PRESIGN_TTL=PT10M
+```
+
+Uploads are staged on local disk under `STORAGE_FS_ROOT` and validated from their
+real bytes **before** a single `PutObject`, so a rejected file never reaches the
+bucket. Public and private objects use separate key prefixes and visibility is
+chosen by the route, never by the client. Nothing is made public at the bucket
+level: public bytes are served by this service, private bytes only through a
+short-lived presigned URL issued after an authorization check. The endpoint must
+be HTTPS unless the JVM flag `storage.s3.allow-http` is set for a local test double.
+
+Switching backends does not migrate existing objects; keys written by the
+filesystem backend stay unreadable by the S3 backend.
+
+## Assets: public and private documents
+
+| Route | Policy |
+|---|---|
+| POST /api/v1/assets/public | Any authenticated role; stored as PUBLIC |
+| POST /api/v1/assets/private | Any authenticated role; stored as PRIVATE |
+| GET /api/v1/assets/{id} | Owner, ADMIN, granted user, or any caller for a PUBLIC asset |
+| GET /api/v1/assets/{id}/content | Anonymous for PUBLIC only; PRIVATE answers 404 |
+| GET /api/v1/assets/{id}/download-url | Authorized caller; presigned or streaming fallback |
+| POST /api/v1/assets/{id}/access | Owner or ADMIN |
+| DELETE /api/v1/assets/{id}/access/{user_id} | Owner or ADMIN; 404 if no such grant |
+| DELETE /api/v1/assets/{id} | Owner or ADMIN; metadata DELETED and object removed |
+
+An asset that exists but is not visible returns **403**; unknown or deleted assets
+return **404**. Metadata never exposes the object key, checksum or backend name.
+Deleting an asset removes the object because these are user documents; program
+files keep their bytes for audit under the separate `/files` model.
+
+Coach certificates are stored as PRIVATE assets and referenced by id from the User
+service. User stores no file bytes.
+
 ## API and authorization
 
 Native Bruno collection: `api-collection/service/bruno.json`; every endpoint has executable assertions, request body examples and response documentation. Base URL defaults to direct service `http://localhost:8082`. The shared `api-contracts/rest/storage.yaml` defines the file schemas and role matrix. Approved scope overrides the old header trust/media descriptions: this service **validates JWTs itself** and ignores all `X-User-*` client headers; media is intentionally absent.

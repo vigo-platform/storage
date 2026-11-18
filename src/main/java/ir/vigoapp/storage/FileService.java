@@ -15,10 +15,10 @@ class FileService {
     private final FileRepository files;
     private final JdbcTemplate db;
     private final TransactionTemplate tx;
-    private final FileSystemBlobStore blobs;
+    private final BlobStore blobs;
     private final FileValidator validator;
     private final StorageOutbox outbox;
-    FileService(FileRepository files,JdbcTemplate db,TransactionTemplate tx,FileSystemBlobStore blobs,FileValidator validator,StorageOutbox outbox) {
+    FileService(FileRepository files,JdbcTemplate db,TransactionTemplate tx,BlobStore blobs,FileValidator validator,StorageOutbox outbox) {
         this.files=files;this.db=db;this.tx=tx;this.blobs=blobs;this.validator=validator;this.outbox=outbox;
     }
     Map<String,Object> upload(Policy.Actor actor,UUID athlete,Policy.Category category,String title,String description,MultipartFile input) throws IOException {
@@ -51,7 +51,7 @@ class FileService {
         boolean promoted=false;
         try {
             var valid=validator.validate(staged,input.getOriginalFilename());
-            blobs.promote(staged);promoted=true;
+            blobs.promote(staged,BlobStore.Visibility.PRIVATE);promoted=true;
             return action.run(staged,valid);
         } catch(IOException|RuntimeException e) {
             // Translate only after the failed DB transaction has rolled back and the blob is compensated below.
@@ -111,8 +111,8 @@ class FileService {
             if(rows.isEmpty())throw Api.fail(404,"NOT_FOUND");var row=rows.getFirst();String key=(String)row.get("blob_key");
             try {
                 long expected=((Number)row.get("size_bytes")).longValue();
-                if(!blobs.exists(key)||blobs.size(key)!=expected)throw new IOException("Committed blob missing or incorrect size");
-                return new Download(blobs.open(key),(String)row.get("original_name"),(String)row.get("content_type"),expected,number);
+                if(!blobs.exists(key,BlobStore.Visibility.PRIVATE)||blobs.size(key,BlobStore.Visibility.PRIVATE)!=expected)throw new IOException("Committed blob missing or incorrect size");
+                return new Download(blobs.open(key,BlobStore.Visibility.PRIVATE),(String)row.get("original_name"),(String)row.get("content_type"),expected,number);
             }catch(IOException e){throw new IllegalStateException("Blob integrity failure",e);}
         });
     }
