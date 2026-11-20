@@ -33,6 +33,7 @@ services:
       STORAGE_S3_SECRET_KEY: ${STORAGE_S3_SECRET_KEY:-}
       STORAGE_S3_PATH_STYLE: ${STORAGE_S3_PATH_STYLE:-true}
       STORAGE_PRESIGN_TTL: ${STORAGE_PRESIGN_TTL:-PT10M}
+      STORAGE_OUTBOX_DELAY_MS: ${STORAGE_OUTBOX_DELAY_MS:-1000}
       # Local scratch space for staged uploads. Required even with the s3 backend,
       # because files are validated on disk before they are written to the bucket.
       STORAGE_FS_ROOT: /var/lib/vigo/storage
