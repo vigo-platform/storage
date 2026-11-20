@@ -21,6 +21,21 @@ services:
       JWT_AUDIENCE: ${JWT_AUDIENCE:?Required JWT audience}
       STORAGE_USER_BASE_URL: ${STORAGE_USER_BASE_URL:?Required User REST origin}
       STORAGE_USER_ALLOW_HTTP: ${STORAGE_USER_ALLOW_HTTP:-false}
+      # Object storage backend: filesystem (default) or s3 for ParsPack-style storage.
+      # Compose only forwards variables listed here, so an S3 setting in .env has no
+      # effect until it also appears in this list.
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-filesystem}
+      STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT:-}
+      STORAGE_S3_REGION: ${STORAGE_S3_REGION:-us-east-1}
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-}
+      # Credentials come from .env only; never put keys in this file or .env.example.
+      STORAGE_S3_ACCESS_KEY: ${STORAGE_S3_ACCESS_KEY:-}
+      STORAGE_S3_SECRET_KEY: ${STORAGE_S3_SECRET_KEY:-}
+      STORAGE_S3_PATH_STYLE: ${STORAGE_S3_PATH_STYLE:-true}
+      STORAGE_PRESIGN_TTL: ${STORAGE_PRESIGN_TTL:-PT10M}
+      STORAGE_OUTBOX_DELAY_MS: ${STORAGE_OUTBOX_DELAY_MS:-1000}
+      # Local scratch space for staged uploads. Required even with the s3 backend,
+      # because files are validated on disk before they are written to the bucket.
       STORAGE_FS_ROOT: /var/lib/vigo/storage
       MANAGEMENT_ADDRESS: 0.0.0.0
     volumes:
