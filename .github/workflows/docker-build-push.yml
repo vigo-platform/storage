@@ -1,0 +1,120 @@
+name: Docker Build & Push
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - 'build-and-push'
+      - 'build-and-push-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker image tag (leave empty to use the commit SHA)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY_IMAGE: logtaha/vigo-storage-service
+
+jobs:
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Resolve Docker image tags
+        id: resolve_tag
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          LC_ALL: C
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            tag="${INPUT_TAG#"${INPUT_TAG%%[![:space:]]*}"}"
+            tag="${tag%"${tag##*[![:space:]]}"}"
+          elif [[ "$REF_NAME" == 'build-and-push' ]]; then
+            tag=''
+          else
+            tag="${REF_NAME#build-and-push-}"
+          fi
+
+          if [[ -z "$tag" ]]; then
+            tag="sha-$(git rev-parse --short HEAD)"
+            publish_latest=false
+          else
+            if [[ ! "$tag" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]; then
+              echo '::error::Invalid Docker tag. Use 1–128 ASCII letters, digits, underscores, periods, or hyphens. Start with a letter, digit, or underscore.'
+              exit 1
+            fi
+            publish_latest=true
+          fi
+
+          {
+            echo 'docker_tags<<EOF'
+            echo "${REGISTRY_IMAGE}:${tag}"
+            if [[ "$publish_latest" == true && "$tag" != latest ]]; then
+              echo "${REGISTRY_IMAGE}:latest"
+            fi
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        id: build_push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.resolve_tag.outputs.docker_tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate job summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+          DOCKER_TAGS: ${{ steps.resolve_tag.outputs.docker_tags }}
+          BUILD_OUTCOME: ${{ steps.build_push.outcome }}
+          IMAGE_DIGEST: ${{ steps.build_push.outputs.digest }}
+        run: |
+          {
+            echo '## Docker Build & Push'
+            echo
+            printf -- '- Status: **%s**\n' "$JOB_STATUS"
+            printf -- '- Trigger: `%s`\n' "$GITHUB_EVENT_NAME"
+            printf -- '- Commit: `%s`\n' "$GITHUB_SHA"
+            printf -- '- Build and push: **%s**\n' "${BUILD_OUTCOME:-skipped}"
+            if [[ -n "$IMAGE_DIGEST" ]]; then
+              printf -- '- Digest: `%s`\n' "$IMAGE_DIGEST"
+            fi
+            if [[ -n "$DOCKER_TAGS" ]]; then
+              echo
+              echo 'Image tags requested:'
+              while IFS= read -r image; do
+                printf -- '- [`%s`](https://hub.docker.com/r/%s/tags)\n' "$image" "$REGISTRY_IMAGE"
+              done <<< "$DOCKER_TAGS"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
